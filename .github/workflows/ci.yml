@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  prepare:
+    name: Install + Prisma generate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # packageManager field in package.json drives the version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @streaming-chat/database prisma:generate
+
+      - name: Upload Prisma generated client
+        uses: actions/upload-artifact@v4
+        with:
+          name: prisma-client
+          path: packages/database/generated
+          retention-days: 1
+
+  lint:
+    name: Lint
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: prisma-client
+          path: packages/database/generated
+      - run: pnpm -r lint
+
+  typecheck:
+    name: Typecheck
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: prisma-client
+          path: packages/database/generated
+      - run: pnpm -r typecheck
+
+  test:
+    name: Test
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: prisma-client
+          path: packages/database/generated
+      - run: pnpm -r test
