@@ -56,13 +56,13 @@ export class SessionGuard implements CanActivate {
 
     req.sessionId = sessionId;
 
-    const isProduction = env?.NODE_ENV === 'production';
+    const secure = env?.NODE_ENV === 'production' && env?.HOST_HAS_TLS === 'true';
     res.cookie('sid', sessionId, {
       httpOnly: true,
       signed: false,
       sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000,  // 30 days
-      secure: isProduction,
+      secure,
     });
 
     return true;

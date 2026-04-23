@@ -50,6 +50,12 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -81,9 +87,12 @@ services:
     restart: unless-stopped
     depends_on:
       langfuse-db: { condition: service_healthy }
-      clickhouse: { condition: service_started }
+      clickhouse: { condition: service_healthy }
       redis: { condition: service_started }
       minio: { condition: service_started }
+    env_file:
+      - path: .env.prod
+        required: false
     environment:
       DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
@@ -110,6 +119,9 @@ services:
       langfuse-worker: { condition: service_started }
     ports:
       - "3100:3000"
+    env_file:
+      - path: .env.prod
+        required: false
     environment:
       DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
@@ -130,32 +142,72 @@ services:
       TELEMETRY_ENABLED: "false"
 
   # ───────── Profile: apps (prod containers — Dockerfiles created in `deploy` change) ─────────
-  # NOTE: `--profile apps` will fail until Dockerfiles exist (out of scope for foundation).
+  migrate:
+    image: ghcr.io/omarcorr/stremingchat-backend:${BACKEND_IMAGE_TAG:-latest}
+    container_name: chat-migrate
+    profiles: [apps]
+    restart: "no"
+    env_file: .env.prod
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["pnpm", "--filter", "@streaming-chat/database", "prisma", "migrate", "deploy"]
+
   backend:
     build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    image: ghcr.io/omarcorr/stremingchat-backend:${BACKEND_IMAGE_TAG:-latest}
     container_name: chat-backend
     profiles: [apps]
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
-    env_file: .env
+      migrate: { condition: service_completed_successfully }
+    env_file: .env.prod
     ports:
       - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    image: ghcr.io/omarcorr/stremingchat-frontend:${FRONTEND_IMAGE_TAG:-latest}
     container_name: chat-frontend
     profiles: [apps]
     restart: unless-stopped
     depends_on:
-      - backend
-    env_file: .env
+      backend: { condition: service_healthy }
+    env_file: .env.prod
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: chat-caddy
+    profiles: [apps]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend: { condition: service_started }
+      frontend: { condition: service_started }
 
 volumes:
   postgres_data:
@@ -164,3 +216,5 @@ volumes:
   clickhouse_logs:
   redis_data:
   minio_data:
+  caddy_data:
+  caddy_config:

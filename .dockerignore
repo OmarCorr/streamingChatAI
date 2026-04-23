@@ -1,0 +1,45 @@
+# Dependencies — never send these into the build context
+node_modules/
+**/node_modules/
+
+# Next.js build output (rebuilt inside Docker)
+.next/
+**/.next/
+
+# NestJS / tsc build output (rebuilt inside Docker)
+dist/
+**/dist/
+
+# Prisma generated client (regenerated inside Docker by prisma:generate)
+packages/database/generated/
+
+# Test coverage reports
+coverage/
+**/coverage/
+
+# Environment files — NEVER include real secrets in the build context
+.env*
+!.env.example
+
+# Git metadata
+.git/
+.gitignore
+
+# Logs
+*.log
+**/npm-debug.log*
+**/pnpm-debug.log*
+
+# CI / docs / editor — reduce context size
+.github/
+docs/
+.vscode/
+.idea/
+
+# Test files (not needed inside the image)
+**/*.spec.ts
+**/*.test.ts
+
+# Markdown (except root README if needed — excluded for context size)
+*.md
+!README.md

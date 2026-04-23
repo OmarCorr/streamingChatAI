@@ -2,6 +2,15 @@ import { ExecutionContext } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionGuard } from './session.guard';
 import { PrismaService } from '../../modules/prisma/prisma.service';
+import * as envModule from '../../env';
+
+// Mutable env stub used by the Secure matrix tests.
+// We directly assign to the module's `let env` export via the namespace object.
+const envStub = {
+  COOKIE_SECRET: 'a'.repeat(32),
+  NODE_ENV: 'development' as 'development' | 'test' | 'production',
+  HOST_HAS_TLS: 'false' as 'true' | 'false',
+} as typeof envModule.env;
 
 function makeContext(cookieSid?: string, ip = '127.0.0.1'): ExecutionContext {
   const cookies: Record<string, string> = {};
@@ -124,5 +133,78 @@ describe('SessionGuard', () => {
       'cookie-test-id',
       expect.objectContaining({ httpOnly: true }),
     );
+  });
+
+  describe('Secure flag matrix (NODE_ENV × HOST_HAS_TLS)', () => {
+    const newSession = { ...existingSession, id: 'secure-test-id' };
+
+    beforeEach(() => {
+      prismaService.session.create.mockResolvedValue(newSession);
+      // Point the module's env singleton to our mutable stub.
+      // Cast through unknown to bypass the TS read-only constraint on namespace exports
+      // (at runtime the CJS module namespace IS mutable via the binding).
+      (envModule as unknown as { env: typeof envModule.env }).env = envStub;
+    });
+
+    afterEach(() => {
+      // Reset to undefined so other tests that don't use the stub are unaffected
+      (envModule as unknown as { env: typeof envModule.env }).env = undefined as unknown as typeof envModule.env;
+    });
+
+    it('NODE_ENV=development + HOST_HAS_TLS=false → Secure: false', async () => {
+      envStub.NODE_ENV = 'development';
+      envStub.HOST_HAS_TLS = 'false';
+
+      const ctx = makeContext();
+      await guard.canActivate(ctx);
+      const res = ctx.switchToHttp().getResponse<{ cookie: jest.Mock }>();
+      expect(res.cookie).toHaveBeenCalledWith(
+        'sid',
+        expect.any(String),
+        expect.objectContaining({ secure: false }),
+      );
+    });
+
+    it('NODE_ENV=development + HOST_HAS_TLS=true → Secure: false', async () => {
+      envStub.NODE_ENV = 'development';
+      envStub.HOST_HAS_TLS = 'true';
+
+      const ctx = makeContext();
+      await guard.canActivate(ctx);
+      const res = ctx.switchToHttp().getResponse<{ cookie: jest.Mock }>();
+      expect(res.cookie).toHaveBeenCalledWith(
+        'sid',
+        expect.any(String),
+        expect.objectContaining({ secure: false }),
+      );
+    });
+
+    it('NODE_ENV=production + HOST_HAS_TLS=false → Secure: false', async () => {
+      envStub.NODE_ENV = 'production';
+      envStub.HOST_HAS_TLS = 'false';
+
+      const ctx = makeContext();
+      await guard.canActivate(ctx);
+      const res = ctx.switchToHttp().getResponse<{ cookie: jest.Mock }>();
+      expect(res.cookie).toHaveBeenCalledWith(
+        'sid',
+        expect.any(String),
+        expect.objectContaining({ secure: false }),
+      );
+    });
+
+    it('NODE_ENV=production + HOST_HAS_TLS=true → Secure: true', async () => {
+      envStub.NODE_ENV = 'production';
+      envStub.HOST_HAS_TLS = 'true';
+
+      const ctx = makeContext();
+      await guard.canActivate(ctx);
+      const res = ctx.switchToHttp().getResponse<{ cookie: jest.Mock }>();
+      expect(res.cookie).toHaveBeenCalledWith(
+        'sid',
+        expect.any(String),
+        expect.objectContaining({ secure: true }),
+      );
+    });
   });
 });

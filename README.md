@@ -85,3 +85,22 @@ docker compose --profile observability --profile apps up -d
 | `pnpm test` | Run tests across all workspaces |
 | `pnpm prisma:generate` | Regenerate Prisma client |
 | `pnpm prisma:migrate` | Run pending Prisma migrations |
+
+## Deploy
+
+**Live URL**: `https://<VPS_IP>/` — self-signed TLS (expect browser warning; click "Advanced → Proceed")
+
+### Architecture
+
+```
+Browser → Caddy:443 (self-signed TLS)
+            ├── /api/*       → backend:3001 (NestJS)
+            ├── /langfuse/*  → langfuse-web:3000
+            └── /*           → frontend:3000 (Next.js)
+```
+
+Single Contabo VPS + Docker Compose + Caddy. Auto-deploys on every `git push origin main` via GitHub Actions (`deploy.yml`). Total pipeline time: ~4–5 minutes.
+
+CI badge: ![Deploy](https://github.com/OmarCorr/stremingChatAI/actions/workflows/deploy.yml/badge.svg)
+
+For the full operator runbook — VPS bootstrap, GitHub Secrets, Langfuse setup, rollback, backup, and troubleshooting — see **[docs/DEPLOY.md](docs/DEPLOY.md)**.

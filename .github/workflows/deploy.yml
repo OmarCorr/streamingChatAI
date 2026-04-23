@@ -1,0 +1,285 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never cancel a deploy mid-flight — let the current one finish.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write   # push to GHCR via GITHUB_TOKEN
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Full CI gate — lint, typecheck, test, build
+  # Must pass before any Docker image is built or pushed.
+  # Mirrors ci.yml but runs on push-to-main so deploy.yml is self-contained.
+  # ─────────────────────────────────────────────────────────────────────────────
+  ci:
+    name: CI (lint · typecheck · test · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.18.2"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # CRITICAL ORDER: prisma generate BEFORE typecheck.
+      # packages/database/src/index.ts re-exports generated types;
+      # typecheck fails with TS2307 if the client has not been generated yet.
+      - name: Generate Prisma client
+        run: pnpm --filter @streaming-chat/database prisma:generate
+
+      - name: Lint (backend)
+        run: pnpm --filter @streaming-chat/backend lint
+
+      - name: Typecheck (backend)
+        run: pnpm --filter @streaming-chat/backend typecheck
+
+      - name: Test (backend)
+        run: pnpm --filter @streaming-chat/backend test
+
+      - name: Lint (frontend)
+        run: pnpm --filter @streaming-chat/frontend lint
+
+      - name: Typecheck (frontend)
+        run: pnpm --filter @streaming-chat/frontend typecheck
+
+      - name: Build (frontend — verifies standalone output)
+        run: pnpm --filter @streaming-chat/frontend build
+        # NOTE: NEXT_PUBLIC_LIGHTHOUSE_MODE MUST NOT be set here.
+        # Its presence disables SessionBootstrap in production builds.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Build Docker images and push to GHCR
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push (${{ matrix.app }})
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - app: backend
+            image: ghcr.io/omarcorr/stremingchat-backend
+          - app: frontend
+            image: ghcr.io/omarcorr/stremingchat-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # NOTE: GHCR lowercases repository/username automatically.
+      # Tags: immutable sha-<SHA> for rollback + moving `latest` alias.
+      # NOTE: NEXT_PUBLIC_LIGHTHOUSE_MODE is NOT set in any ENV directive.
+      - name: Build and push ${{ matrix.app }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: |
+            ${{ matrix.image }}:sha-${{ github.sha }}
+            ${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: SSH deploy to VPS
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-ssh:
+    name: Deploy (SSH)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          # Env vars injected into the remote shell via appleboy envs:.
+          # The ssh-action encrypts these into the SSH session — they never
+          # appear in plain text in the workflow log.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_SALT: ${{ secrets.LANGFUSE_SALT }}
+          LANGFUSE_ENCRYPTION_KEY: ${{ secrets.LANGFUSE_ENCRYPTION_KEY }}
+          LANGFUSE_DB_PASSWORD: ${{ secrets.LANGFUSE_DB_PASSWORD }}
+          LANGFUSE_NEXTAUTH_SECRET: ${{ secrets.LANGFUSE_NEXTAUTH_SECRET }}
+          LANGFUSE_NEXTAUTH_URL: ${{ secrets.LANGFUSE_NEXTAUTH_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          HOST_HAS_TLS: ${{ secrets.HOST_HAS_TLS }}
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          # Non-secret deploy context — also injected as env vars.
+          GH_ACTOR: ${{ github.actor }}
+          GH_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          envs: >-
+            GEMINI_API_KEY,LANGFUSE_PUBLIC_KEY,LANGFUSE_SECRET_KEY,
+            LANGFUSE_SALT,LANGFUSE_ENCRYPTION_KEY,LANGFUSE_DB_PASSWORD,
+            LANGFUSE_NEXTAUTH_SECRET,LANGFUSE_NEXTAUTH_URL,
+            DATABASE_URL,POSTGRES_PASSWORD,COOKIE_SECRET,HOST_HAS_TLS,
+            PUBLIC_URL,CLICKHOUSE_PASSWORD,REDIS_PASSWORD,
+            MINIO_ROOT_USER,MINIO_ROOT_PASSWORD,GHCR_TOKEN,
+            GH_ACTOR,GH_SHA
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/stremingchat
+
+            # Sync repo to latest main.
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Render .env.prod from injected env vars.
+            # chmod 600 prevents other users on the VPS from reading secrets.
+            cat > .env.prod <<ENVEOF
+            NODE_ENV=production
+            HOST_HAS_TLS=${HOST_HAS_TLS}
+            DATABASE_URL=${DATABASE_URL}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            COOKIE_SECRET=${COOKIE_SECRET}
+            GEMINI_API_KEY=${GEMINI_API_KEY}
+            LANGFUSE_HOST=http://langfuse-web:3000
+            LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+            LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+            LANGFUSE_SALT=${LANGFUSE_SALT}
+            LANGFUSE_ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+            LANGFUSE_DB_PASSWORD=${LANGFUSE_DB_PASSWORD}
+            LANGFUSE_NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
+            LANGFUSE_NEXTAUTH_URL=${LANGFUSE_NEXTAUTH_URL}
+            CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+            REDIS_PASSWORD=${REDIS_PASSWORD}
+            MINIO_ROOT_USER=${MINIO_ROOT_USER}
+            MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+            BACKEND_IMAGE_TAG=sha-${GH_SHA}
+            FRONTEND_IMAGE_TAG=sha-${GH_SHA}
+            FRONTEND_URL=https://${PUBLIC_URL}
+            ENVEOF
+            chmod 600 .env.prod
+
+            # Authenticate to GHCR for image pull (read:packages PAT).
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin
+
+            # Pull the new images (backend + frontend + all profiled services).
+            docker compose --profile apps --profile observability pull
+
+            # Run database migrations before starting backend.
+            # ADR-6: one-shot migrate service; exits 0 if no pending migrations.
+            # If migrations fail, the script exits here and the old backend keeps serving.
+            docker compose run --rm migrate
+
+            # Roll forward — restarts only changed services.
+            # --profile apps: backend, frontend, caddy, migrate
+            # --profile observability: langfuse-web, langfuse-worker, clickhouse, redis, minio
+            docker compose --profile apps --profile observability up -d --remove-orphans
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4: Health check — verify backend is live before Lighthouse
+  # ─────────────────────────────────────────────────────────────────────────────
+  health:
+    name: Health Check
+    needs: deploy-ssh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for backend health (max 120 s, 24 × 5 s)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 24); do
+            echo "Attempt ${i}/24..."
+            if curl --retry 0 --silent --fail --insecure \
+                "https://${{ secrets.VPS_HOST }}/api/health"; then
+              echo ""
+              echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check timed out after 120 seconds."
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 5: Lighthouse post-deploy audit
+  # continue-on-error: true — a Lighthouse miss warns but MUST NOT roll back.
+  # ADR-12: this is the single source of truth for Lighthouse scores (post-deploy,
+  # against the real deployed URL). The PR-time lighthouse.yml is retired.
+  # ─────────────────────────────────────────────────────────────────────────────
+  lighthouse:
+    name: Lighthouse Audit (post-deploy)
+    needs: health
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.18.2"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install lhci globally (pinned)
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: Run Lighthouse CI (3 mobile runs, averaged)
+        env:
+          LIGHTHOUSE_URL: https://${{ secrets.VPS_HOST }}
+        run: |
+          lhci autorun \
+            --collect.url="${LIGHTHOUSE_URL}/c/new" \
+            --collect.numberOfRuns=3 \
+            --config=.lighthouserc.json
+        # NOTE: CLI --collect.url overrides the url array in .lighthouserc.json.
+        # lhci does NOT expand ${LIGHTHOUSE_URL} from env inside JSON config,
+        # so the override is done here at the CLI level.
+
+      - name: Upload Lighthouse report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-report-${{ github.sha }}
+          path: .lighthouseci/
+          retention-days: 30

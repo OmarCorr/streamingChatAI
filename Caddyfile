@@ -1,0 +1,60 @@
+# ADR-2: Caddy as the sole reverse proxy for the stack.
+# ADR-13: tls internal for IP-only v1 (no domain). Browser will show a self-signed
+#         cert warning — click "Advanced > Proceed". When a domain is obtained,
+#         replace `:443 { tls internal ... }` with `{domain} { ... }` and remove
+#         the tls internal directive; Caddy will auto-provision Let's Encrypt.
+
+{
+    # Disable the Caddy admin API endpoint (not needed in a container — reduces attack surface).
+    admin off
+    # Caddy would normally redirect :80 → :443 automatically, but we define the :80 block
+    # explicitly for clarity. Disabling the implicit redirect avoids a double-redirect loop.
+    auto_https disable_redirects
+}
+
+# HTTPS listener — self-signed cert via `tls internal`.
+:443 {
+    tls internal
+
+    # Access log to stdout (captured by `docker logs caddy`).
+    log {
+        output stdout
+        format console
+    }
+
+    # --- Backend API (SSE-safe) ---
+    # flush_interval -1: disables Caddy's response buffering → SSE tokens arrive at the
+    # browser immediately without batching.
+    # transport http { response_header_timeout 0; read_timeout 0 }: disables timeouts on
+    # long-lived SSE connections that can last 30-120s per Gemini generation.
+    @api path /api/*
+    handle @api {
+        reverse_proxy backend:3001 {
+            flush_interval -1
+            transport http {
+                response_header_timeout 0
+                read_timeout 0
+            }
+        }
+    }
+
+    # --- Langfuse UI ---
+    # Strip /langfuse prefix so Langfuse receives requests at its root path (/).
+    # Only reachable when the observability compose profile is active.
+    # 502 Bad Gateway is expected when the profile is not up — acceptable per design.
+    @langfuse path /langfuse/*
+    handle @langfuse {
+        uri strip_prefix /langfuse
+        reverse_proxy langfuse-web:3000
+    }
+
+    # --- Frontend (catch-all) ---
+    handle {
+        reverse_proxy frontend:3000
+    }
+}
+
+# HTTP :80 → HTTPS permanent redirect.
+:80 {
+    redir https://{host}{uri} permanent
+}

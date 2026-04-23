@@ -70,6 +70,80 @@ describe('EnvSchema', () => {
   });
 });
 
+describe('HOST_HAS_TLS', () => {
+  it("accepts 'true' and parses to the string 'true'", () => {
+    const result = EnvSchema.safeParse({
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/chatdb',
+      GEMINI_API_KEY: 'some-key',
+      LANGFUSE_SECRET_KEY: 'sk-lf-secret',
+      LANGFUSE_PUBLIC_KEY: 'pk-lf-public',
+      LANGFUSE_HOST: 'http://localhost:3100',
+      COOKIE_SECRET: 'a'.repeat(32),
+      NODE_ENV: 'test',
+      HOST_HAS_TLS: 'true',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.HOST_HAS_TLS).toBe('true');
+    }
+  });
+
+  it("accepts 'false' and parses to the string 'false'", () => {
+    const result = EnvSchema.safeParse({
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/chatdb',
+      GEMINI_API_KEY: 'some-key',
+      LANGFUSE_SECRET_KEY: 'sk-lf-secret',
+      LANGFUSE_PUBLIC_KEY: 'pk-lf-public',
+      LANGFUSE_HOST: 'http://localhost:3100',
+      COOKIE_SECRET: 'a'.repeat(32),
+      NODE_ENV: 'test',
+      HOST_HAS_TLS: 'false',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.HOST_HAS_TLS).toBe('false');
+    }
+  });
+
+  it("defaults to 'false' when HOST_HAS_TLS is absent", () => {
+    const result = EnvSchema.safeParse({
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/chatdb',
+      GEMINI_API_KEY: 'some-key',
+      LANGFUSE_SECRET_KEY: 'sk-lf-secret',
+      LANGFUSE_PUBLIC_KEY: 'pk-lf-public',
+      LANGFUSE_HOST: 'http://localhost:3100',
+      COOKIE_SECRET: 'a'.repeat(32),
+      NODE_ENV: 'test',
+      // HOST_HAS_TLS intentionally absent
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.HOST_HAS_TLS).toBe('false');
+    }
+  });
+
+  it.each(['yes', '1', 'TRUE', 'True', '0'])(
+    "rejects invalid value '%s' with a Zod error",
+    (invalidValue) => {
+      const result = EnvSchema.safeParse({
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/chatdb',
+        GEMINI_API_KEY: 'some-key',
+        LANGFUSE_SECRET_KEY: 'sk-lf-secret',
+        LANGFUSE_PUBLIC_KEY: 'pk-lf-public',
+        LANGFUSE_HOST: 'http://localhost:3100',
+        COOKIE_SECRET: 'a'.repeat(32),
+        NODE_ENV: 'test',
+        HOST_HAS_TLS: invalidValue,
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((i) => i.path.join('.'));
+        expect(paths).toContain('HOST_HAS_TLS');
+      }
+    },
+  );
+});
+
 describe('validateEnv()', () => {
   const originalEnv = process.env;
   let exitSpy: jest.SpyInstance;
