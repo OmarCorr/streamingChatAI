@@ -1,0 +1,35 @@
+{
+  "name": "streaming-chat",
+  "private": true,
+  "packageManager": "pnpm@10.18.2",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "dev:backend": "pnpm --filter @streaming-chat/backend start:dev",
+    "dev:frontend": "pnpm --filter @streaming-chat/frontend dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "prisma:generate": "pnpm --filter @streaming-chat/database prisma:generate",
+    "prisma:migrate": "pnpm --filter @streaming-chat/database prisma:migrate"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "@nestjs/core",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "eslint": "9.13.0",
+    "@typescript-eslint/eslint-plugin": "8.12.2",
+    "@typescript-eslint/parser": "8.12.2",
+    "eslint-config-prettier": "9.1.0",
+    "prettier": "3.3.3",
+    "@types/node": "20.17.6"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@streaming-chat/database",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./generated/client/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "require": "./generated/client/index.js",
+      "import": "./generated/client/index.js",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "lint": "echo \"no lint for database\"",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests for database\""
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0"
+  },
+  "devDependencies": {
+    "prisma": "5.22.0",
+    "typescript": "5.6.3"
+  }
+}

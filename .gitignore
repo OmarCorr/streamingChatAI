@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables (NEVER commit)
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Prisma generated client
+packages/database/generated/
+
+# Compiled TS outputs that must never land in packages/database/src/
+packages/database/src/**/*.js
+packages/database/src/**/*.js.map
+packages/database/src/**/*.d.ts
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# TypeScript incremental build
+*.tsbuildinfo
+.tsbuildinfo
+
+# pnpm
+.pnpm-store/
+
+# Claude Code skill registry cache (local tooling, not project)
+.atl/

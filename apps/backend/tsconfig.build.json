@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "paths": {
+      "@streaming-chat/database": ["../../packages/database/generated/client"],
+      "@streaming-chat/database/*": ["../../packages/database/generated/client/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+}
