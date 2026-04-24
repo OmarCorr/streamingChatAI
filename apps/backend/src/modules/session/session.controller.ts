@@ -7,7 +7,7 @@ import { CreateSessionResponseDto } from './dto/create-session-response.dto';
 
 @ApiTags('sessions')
 @Controller('sessions')
-@SkipThrottle()
+@SkipThrottle({ short: true, long: true })
 export class SessionController {
   @Post()
   @UseGuards(SessionGuard)

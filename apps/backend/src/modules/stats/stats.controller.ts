@@ -5,7 +5,7 @@ import { StatsService, StatsResult } from './stats.service';
 
 @ApiTags('stats')
 @Controller('stats')
-@SkipThrottle()
+@SkipThrottle({ short: true, long: true })
 export class StatsController {
   constructor(private readonly statsService: StatsService) {}
 

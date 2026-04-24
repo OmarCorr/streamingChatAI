@@ -14,7 +14,7 @@ interface HealthResult {
 
 @ApiTags('health')
 @Controller('health')
-@SkipThrottle()
+@SkipThrottle({ short: true, long: true })
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

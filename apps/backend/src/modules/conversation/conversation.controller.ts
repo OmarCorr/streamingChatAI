@@ -63,7 +63,7 @@ export class ConversationController {
   }
 
   @Get()
-  @SkipThrottle()
+  @SkipThrottle({ short: true, long: true })
   @ApiOperation({ summary: 'List all conversations for this session' })
   async findAll(@Req() req: Request): Promise<ConversationResponseDto[]> {
     const convs = await this.conversationService.findAll(req.sessionId ?? '');
@@ -71,7 +71,7 @@ export class ConversationController {
   }
 
   @Get(':id')
-  @SkipThrottle()
+  @SkipThrottle({ short: true, long: true })
   @UseGuards(ConversationOwnerGuard)
   @ApiOperation({ summary: 'Get a conversation by id (with its messages)' })
   async findOne(
