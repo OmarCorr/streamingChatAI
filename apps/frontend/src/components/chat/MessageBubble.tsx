@@ -27,7 +27,7 @@ interface MessageBubbleProps {
   message: Message;
   conversationId: string;
   messageIndex: number;
-  onRegenerate?: (conversationId: string, targetIndex: number) => void;
+  onRegenerate?: (conversationId: string, messageId: string, targetIndex: number) => void;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -84,7 +84,9 @@ interface AssistantBubbleProps {
   message: Message;
   conversationId: string;
   messageIndex: number;
-  onRegenerate: ((conversationId: string, targetIndex: number) => void) | undefined;
+  onRegenerate:
+    | ((conversationId: string, messageId: string, targetIndex: number) => void)
+    | undefined;
 }
 
 const StaticAssistantBubble = memo(function StaticAssistantBubble({
@@ -107,7 +109,7 @@ const StaticAssistantBubble = memo(function StaticAssistantBubble({
             {onRegenerate && (
               <button
                 className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
-                onClick={() => onRegenerate(conversationId, messageIndex)}
+                onClick={() => onRegenerate(conversationId, message.id, messageIndex)}
                 aria-label="Retry generating response"
               >
                 Retry

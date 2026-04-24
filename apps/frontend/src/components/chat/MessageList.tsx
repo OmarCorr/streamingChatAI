@@ -25,7 +25,7 @@ import type { Message, ConversationWithMessages } from '@/types/api';
 interface MessageListProps {
   conversation: ConversationWithMessages;
   isLoading: boolean;
-  onRegenerate: (conversationId: string, targetIndex: number) => void;
+  onRegenerate: (conversationId: string, messageId: string, targetIndex: number) => void;
 }
 
 export function MessageList({ conversation, isLoading, onRegenerate }: MessageListProps) {

@@ -14,14 +14,18 @@ import type { ConversationWithMessages } from '@/types/api';
  * Behaviour:
  * - Guards: if streamStore.status !== 'idle', no-op (spec scenario 4.3).
  * - Optimistically slices the TanStack cache at targetIndex before streaming.
- * - Calls POST /api/conversations/:id/regenerate via sseStream.
+ * - Calls POST /api/conversations/:id/messages/:mid/regenerate via sseStream.
  * - Same SSE event pipeline as useStream (start → token → metadata → done/error).
  * - On 404: shows Sonner toast, reverts the optimistic slice.
  * - On terminal events: invalidates ['conversation', id] + ['conversations'].
  */
 
 interface UseRegenerateReturn {
-  regenerate: (conversationId: string, targetIndex: number) => Promise<void>;
+  regenerate: (
+    conversationId: string,
+    messageId: string,
+    targetIndex: number,
+  ) => Promise<void>;
 }
 
 export function useRegenerate(): UseRegenerateReturn {
@@ -29,7 +33,11 @@ export function useRegenerate(): UseRegenerateReturn {
   const store = useStreamStore;
 
   const regenerate = useCallback(
-    async (conversationId: string, targetIndex: number): Promise<void> => {
+    async (
+      conversationId: string,
+      messageId: string,
+      targetIndex: number,
+    ): Promise<void> => {
       // Guard: block if another stream is active (spec scenario 4.3).
       if (store.getState().status !== 'idle') return;
 
@@ -56,8 +64,8 @@ export function useRegenerate(): UseRegenerateReturn {
 
       try {
         const stream = sseStream(
-          `/api/conversations/${conversationId}/regenerate`,
-          { targetIndex },
+          `/api/conversations/${conversationId}/messages/${messageId}/regenerate`,
+          {},
           signal,
         );
 

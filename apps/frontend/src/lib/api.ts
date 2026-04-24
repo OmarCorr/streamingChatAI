@@ -123,15 +123,12 @@ export function postMessage(
 }
 
 /** POST /api/conversations/:id/messages/:mid/regenerate — returns Response (SSE) directly */
-export function postRegenerate(
-  convId: string,
-  body: { targetIndex: number },
-): Promise<Response> {
-  return fetch(`/api/conversations/${convId}/regenerate`, {
+export function postRegenerate(convId: string, messageId: string): Promise<Response> {
+  return fetch(`/api/conversations/${convId}/messages/${messageId}/regenerate`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({}),
   });
 }
 
