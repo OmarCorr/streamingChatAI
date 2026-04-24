@@ -10,6 +10,11 @@
     # Caddy would normally redirect :80 → :443 automatically, but we define the :80 block
     # explicitly for clarity. Disabling the implicit redirect avoids a double-redirect loop.
     auto_https disable_redirects
+    # Many TLS clients (curl, browsers) strip the SNI field when the host is a bare IP
+    # literal (RFC 6066 forbids IP literals in SNI). Without a default SNI, Caddy can't
+    # decide which site's cert to serve and responds with `tlsv1 alert internal error`.
+    # Set a fallback SNI so Caddy serves the IP cert when no SNI is provided.
+    default_sni 75.119.140.201
 }
 
 # HTTPS listener — self-signed cert via `tls internal`.
