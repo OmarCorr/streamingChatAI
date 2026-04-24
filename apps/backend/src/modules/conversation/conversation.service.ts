@@ -85,7 +85,13 @@ export class ConversationService {
 
   /**
    * Build conversation history suitable for passing to the LLM.
-   * Truncates oldest messages first if over MAX_HISTORY.
+   *
+   * Truncates the OLDEST messages first when the count exceeds MAX_HISTORY —
+   * recent context matters most for coherent replies. No DB-level pagination:
+   * we load the full message list and slice in JS. This is fine at demo scale
+   * (< 500 messages per conversation). If a conversation exceeds several
+   * thousand messages, revisit: add a DB-level `take` + `orderBy desc` query
+   * and reverse in JS to keep the [oldest → newest] order the LLM expects.
    */
   async buildHistory(conversationId: string): Promise<HistoryMessage[]> {
     const messages = await this.prisma.message.findMany({

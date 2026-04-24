@@ -8,9 +8,20 @@ import { useSessionStore } from '@/stores/session';
 import type { ConversationWithMessages } from '@/types/api';
 
 /**
- * M2.G2 — Fetches a single conversation with its messages.
- * Gated on sessionReady && !!id.
- * On 404 (deleted or foreign session), navigates to /c/new — spec scenario 10.3.
+ * Fetches a single conversation with its messages.
+ *
+ * Gated on `sessionReady && !!id` via TanStack Query's `enabled` flag — we
+ * must not fetch before the session cookie is established, otherwise the
+ * backend creates a fresh session and this conversation will always 404.
+ *
+ * On 404, navigates to `/c/new`. Two scenarios produce a 404:
+ * 1. The conversation was deleted (our own session).
+ * 2. The conversation exists but belongs to another session (see
+ *    `ConversationOwnerGuard` — 404 is returned deliberately to prevent
+ *    id enumeration across sessions).
+ *
+ * We can't distinguish the two, but the UX response is the same: bounce
+ * the user to a fresh "new conversation" screen.
  */
 export function useConversation(id: string): {
   data: ConversationWithMessages | undefined;

@@ -1,5 +1,29 @@
 import { create } from 'zustand';
 
+/**
+ * Zustand store for the one active SSE stream in the app.
+ *
+ * Only ONE stream can be active at a time (guarded by `status !== 'idle'`
+ * checks in `useStream` and `useRegenerate`). The store holds the runtime
+ * AbortController so the Stop button can abort the fetch without the hooks
+ * needing a ref to the controller.
+ *
+ * Subscription contract — this store is intentionally fine-grained so that:
+ * - `MessageList` subscribes to `[activeStreamId, activeConversationId, status]`
+ *   only, and re-renders ~2x per stream (start + finalize).
+ * - `ActiveAssistantBubble` is the ONLY component that subscribes to `buffer`.
+ *   It re-renders once per token, as intended.
+ * - `StaticAssistantBubble` does NOT subscribe at all — it reads from the
+ *   TanStack Query cache only.
+ *
+ * This triangle (see `docs/ARCHITECTURE.md § 9`) is what keeps tok-rate
+ * re-renders contained to one component. Adding a broad subscription
+ * elsewhere will silently break the contract.
+ *
+ * The `abort` field is a runtime ref (AbortController). Do NOT persist this
+ * store — AbortController is not serializable, and an aborted-on-reload
+ * controller would be useless anyway.
+ */
 export type StreamStatus = 'idle' | 'streaming' | 'cancelling' | 'cancelled' | 'error';
 
 interface StreamMetadata {

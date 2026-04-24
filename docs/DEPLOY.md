@@ -1,11 +1,14 @@
 # Deploy Runbook — stremingChatAI
 
-Full operator documentation for provisioning, deploying, and operating the stremingChatAI stack on a single Contabo VPS using Docker Compose, Caddy, and GitHub Actions.
+Full operator documentation for provisioning, deploying, and operating the stremingChatAI stack on a single Contabo VPS using Docker Compose, Caddy, and (optionally) GitHub Actions.
+
+> **Current mode**: the project ships with a manual `docker compose` flow. The full GitHub Actions + hardened `deploy` user setup below is kept as a reference for when/if the demo graduates beyond portfolio use. If you're just iterating on the VPS, start at [§0 Manual deploy cheat sheet](#0-manual-deploy-cheat-sheet).
 
 ---
 
 ## Table of Contents
 
+0. [Manual deploy cheat sheet](#0-manual-deploy-cheat-sheet)
 1. [Prerequisites](#1-prerequisites)
 2. [Required GitHub Secrets](#2-required-github-secrets)
 3. [First-time VPS Bootstrap](#3-first-time-vps-bootstrap)
@@ -18,6 +21,71 @@ Full operator documentation for provisioning, deploying, and operating the strem
 10. [Post-Deploy Performance Checks](#10-post-deploy-performance-checks)
 11. [Frontend Re-render Profiling](#11-frontend-re-render-profiling)
 12. [Tear Down](#12-tear-down)
+
+---
+
+## 0. Manual deploy cheat sheet
+
+The quick flow we use day-to-day on the VPS. Assumes the repo is already cloned at `/opt/stremingchat` and `.env.prod` is populated.
+
+> ⚠️ **The Contabo terminal mangles multi-line pastes** (`\`-continuations and `&&` chains break). Paste commands one line at a time.
+
+### Redeploy after a code change
+
+```bash
+cd /opt/stremingchat
+git pull
+docker compose --profile apps build backend frontend
+docker compose --profile apps up -d --force-recreate backend frontend
+docker compose ps
+```
+
+Expect all `apps` services to show `Up (healthy)` within ~60s. `chat-migrate` exits `0` — that's correct, it runs once per deploy.
+
+### First boot (observability + apps)
+
+```bash
+cd /opt/stremingchat
+docker compose --profile observability up -d        # Langfuse stack (db, clickhouse, redis, minio, web, worker)
+# wait ~60s for clickhouse + langfuse-web to settle
+docker compose --profile apps up -d                 # postgres + migrate + backend + frontend + caddy
+```
+
+### Healthcheck a single service
+
+```bash
+docker compose ps
+docker inspect chat-backend --format '{{json .State.Health}}'
+docker exec chat-backend node -e "fetch('http://localhost:3001/api/health').then(r=>r.json().then(j=>console.log(r.status,j)))"
+docker compose logs --tail=100 backend
+```
+
+The inline `node -e "fetch(...)"` is the same command the healthcheck runs (see `docker-compose.yml:173`). If it prints `200 { status: 'ok', ... }` the backend is healthy; anything else, read the logs.
+
+### Common one-liners
+
+```bash
+# Restart only the backend (no rebuild)
+docker compose --profile apps restart backend
+
+# Tail logs across all app services
+docker compose --profile apps logs -f
+
+# Pull latest images if you rebuild elsewhere (CI)
+docker compose --profile apps pull && docker compose --profile apps up -d
+
+# Drop into Postgres
+docker compose exec postgres psql -U chatuser -d chatdemo
+```
+
+### Port layout (important)
+
+- **3001** backend (Nest). Host-mapped `3001:3001`.
+- **3000** frontend (Next.js). Host-mapped `3000:3000`.
+- **5432** Postgres (host-mapped for debugging; restrict via UFW in prod).
+- **80 / 443** Caddy — the only ports that should be publicly exposed.
+
+Backend and frontend share `.env.prod`, and `PORT` is overridden per service in the compose file — do not set `PORT` explicitly in `.env.prod`, or you'll re-introduce the collision documented in §9.
 
 ---
 
@@ -393,6 +461,8 @@ gunzip -c /opt/backups/backup_20241231.sql.gz \
 | Frontend shows blank page / 500 | `docker compose logs frontend` | Check if `backend` is healthy (`docker compose ps`). Check for missing env vars in `.env.prod`. |
 | Langfuse UI unreachable at `/langfuse/` | `docker compose logs langfuse-web` | ClickHouse and Postgres must be healthy first. Run `docker compose ps` — all `--profile observability` services must show `Up (healthy)` or `Up`. |
 | Port 3000 or 3001 reachable externally | `sudo ufw status` | UFW rule is missing or disabled. Re-run `ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable`. Backend/frontend MUST NOT expose ports to the host. |
+| `chat-backend` is permanently unhealthy, `docker inspect` shows `ExitCode 1, Output ""` | `docker exec chat-backend node -e "fetch('http://localhost:3001/api/health').then(r=>console.log(r.status))"` | If the status is **429**, the ThrottlerGuard is rate-limiting `/api/health`. Check every `@SkipThrottle()` in `apps/backend/src/modules/**/*.controller.ts` and make sure it passes BOTH named throttlers explicitly: `@SkipThrottle({ short: true, long: true })`. With named throttlers, `@SkipThrottle()` with no args is a silent no-op. See `docs/ARCHITECTURE.md § 7`. |
+| `fetch failed` when testing `/api/health` on the expected port from inside the container | `docker exec chat-backend node -e "console.log('PORT='+process.env.PORT)"` | The backend isn't listening there. Verify `PORT` isn't overridden in `.env.prod`; the compose file overrides it to `3001` for backend. If `PORT=3000` leaks in, the backend and frontend collide. |
 
 ---
 

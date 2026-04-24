@@ -11,6 +11,23 @@ declare module 'express' {
   }
 }
 
+/**
+ * Attaches `req.sessionId` on every request, creating an anonymous Session row
+ * if the `sid` cookie is missing or unknown.
+ *
+ * Invariants:
+ * - IP is never stored in plaintext; `ipHash = SHA256(ip + COOKIE_SECRET)` is
+ *   written instead. If `COOKIE_SECRET` leaks, the hash becomes predictable —
+ *   rotate the secret, but note that doing so invalidates ALL active sessions
+ *   (old hashes won't match new ones). There is no migration path; users just
+ *   get fresh sessions.
+ * - `lastActiveAt` refresh is fire-and-forget. We never await it, so request
+ *   latency is unaffected if Postgres is slow. Stale `lastActiveAt` values are
+ *   acceptable — the field is informational, not security-relevant.
+ * - Cookie is `httpOnly` + `sameSite=lax`. `secure` is true only when both
+ *   `NODE_ENV=production` AND `HOST_HAS_TLS=true`. In local dev (no TLS), the
+ *   browser would otherwise drop the cookie.
+ */
 @Injectable()
 export class SessionGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
