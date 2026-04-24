@@ -13,7 +13,12 @@
 }
 
 # HTTPS listener — self-signed cert via `tls internal`.
-:443 {
+# ADR-13 revision: site block MUST specify the concrete address (IP here) so Caddy can
+# pre-issue an internal CA certificate with a matching SAN at startup. Using `:443` alone
+# leaves Caddy without a name to issue for and causes `tlsv1 alert internal error` on every
+# TLS handshake. When a real domain is provisioned, replace 75.119.140.201 with that domain
+# and drop `tls internal` so Let's Encrypt is used instead.
+75.119.140.201 {
     tls internal
 
     # Access log to stdout (captured by `docker logs caddy`).
