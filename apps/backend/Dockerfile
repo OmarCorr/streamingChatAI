@@ -54,6 +54,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openssl \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+# Install Prisma CLI globally so the `migrate` compose service can run `prisma migrate deploy`.
+# pnpm deploy --prod --legacy does not reliably include transitive workspace prod-deps in /out,
+# and adding prisma to prod deps of @streaming-chat/database does not get picked up by --legacy mode.
+# Installing via npm keeps the runtime image self-sufficient and independent of pnpm deploy internals.
+RUN npm install -g prisma@5.22.0
 # Non-root user for security (node:20-slim already includes a 'node' user with uid 1000).
 WORKDIR /app
 # Copy production artifact from build stage.
@@ -64,6 +69,9 @@ COPY --from=build --chown=node:node /out ./
 # However, the generated/ directory may be empty or absent if prisma:generate ran before deploy.
 # Copy it explicitly from the build stage to guarantee presence.
 COPY --from=build --chown=node:node /app/packages/database/generated ./node_modules/@streaming-chat/database/generated
+# Schema + migrations folder — required by `prisma migrate deploy` at runtime.
+# pnpm deploy --legacy may strip this from the copied workspace package; copy explicitly.
+COPY --from=build --chown=node:node /app/packages/database/prisma ./node_modules/@streaming-chat/database/prisma
 USER node
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
