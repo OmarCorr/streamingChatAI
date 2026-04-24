@@ -79,7 +79,7 @@ export function MessageList({ conversation, isLoading, onRegenerate }: MessageLi
     : null;
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="flex-1 min-h-0">
       <div ref={scrollRef} className="flex flex-col gap-3 p-4 min-h-full">
         {messages.length === 0 && !isStreamingHere && (
           <p className="text-center text-sm text-muted-foreground mt-8">
