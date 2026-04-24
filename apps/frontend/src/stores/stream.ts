@@ -77,7 +77,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({
       status: nextStatus,
       abort: null,
-      // Keep activeStreamId so MessageBubble can still reference the final message
+      // For 'complete', clear activeStreamId so the server-persisted message renders
+      // through StaticAssistantBubble (which shows the Copy/Regenerate actions). For
+      // 'cancelled' or 'error', keep it so ActiveAssistantBubble can keep showing the
+      // stopped/error indicator bound to that message id.
+      activeStreamId: status === 'complete' ? null : get().activeStreamId,
     });
   },
 }));
