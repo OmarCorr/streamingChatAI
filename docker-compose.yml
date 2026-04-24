@@ -164,6 +164,9 @@ services:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     env_file: .env.prod
+    environment:
+      # Override PORT from env_file so backend and frontend can share .env.prod without collision.
+      PORT: "3001"
     ports:
       - "3001:3001"
     healthcheck:
@@ -184,6 +187,9 @@ services:
     depends_on:
       backend: { condition: service_healthy }
     env_file: .env.prod
+    environment:
+      # Override PORT from env_file (which is 3001 for the backend) so Next.js listens on 3000.
+      PORT: "3000"
     ports:
       - "3000:3000"
     healthcheck:
