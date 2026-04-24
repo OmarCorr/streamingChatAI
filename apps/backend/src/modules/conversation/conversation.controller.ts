@@ -21,10 +21,28 @@ import { ConversationService } from './conversation.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { RenameConversationDto } from './dto/rename-conversation.dto';
 import { ConversationResponseDto } from './dto/conversation-response.dto';
-import { Conversation } from '@streaming-chat/database';
+import { ConversationWithMessagesResponseDto } from './dto/conversation-with-messages-response.dto';
+import { MessageResponseDto } from './dto/message-response.dto';
+import { Conversation, Message } from '@streaming-chat/database';
 
 function toDto(conv: Conversation): ConversationResponseDto {
   return { id: conv.id, title: conv.title, createdAt: conv.createdAt, updatedAt: conv.updatedAt };
+}
+
+function messageToDto(m: Message): MessageResponseDto {
+  return {
+    id: m.id,
+    conversationId: m.conversationId,
+    role: m.role,
+    content: m.content,
+    status: m.status,
+    tokensInput: m.tokensInput,
+    tokensOutput: m.tokensOutput,
+    costUsd: m.costUsd ? m.costUsd.toString() : null,
+    createdAt: m.createdAt,
+    completedAt: m.completedAt,
+    errorReason: m.errorReason,
+  };
 }
 
 @ApiTags('conversations')
@@ -55,14 +73,14 @@ export class ConversationController {
   @Get(':id')
   @SkipThrottle()
   @UseGuards(ConversationOwnerGuard)
-  @ApiOperation({ summary: 'Get a conversation by id' })
+  @ApiOperation({ summary: 'Get a conversation by id (with its messages)' })
   async findOne(
     @Param('id') id: string,
     @Req() req: Request,
-  ): Promise<ConversationResponseDto> {
-    const conv = await this.conversationService.findOwned(id, req.sessionId ?? '');
+  ): Promise<ConversationWithMessagesResponseDto> {
+    const conv = await this.conversationService.findOwnedWithMessages(id, req.sessionId ?? '');
     if (!conv) throw new NotFoundException();
-    return toDto(conv);
+    return { ...toDto(conv), messages: conv.messages.map(messageToDto) };
   }
 
   @Patch(':id')

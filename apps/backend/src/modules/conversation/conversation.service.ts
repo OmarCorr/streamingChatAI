@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Conversation } from '@streaming-chat/database';
+import { Conversation, Message } from '@streaming-chat/database';
 import { PrismaService } from '../prisma/prisma.service';
+
+export type ConversationWithMessages = Conversation & { messages: Message[] };
 
 export interface HistoryMessage {
   role: 'user' | 'assistant' | 'system';
@@ -32,6 +34,20 @@ export class ConversationService {
 
   async findOwned(id: string, sessionId: string): Promise<Conversation | null> {
     const conversation = await this.prisma.conversation.findUnique({ where: { id } });
+    if (!conversation || conversation.sessionId !== sessionId) {
+      return null;
+    }
+    return conversation;
+  }
+
+  async findOwnedWithMessages(
+    id: string,
+    sessionId: string,
+  ): Promise<ConversationWithMessages | null> {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id },
+      include: { messages: { orderBy: { createdAt: 'asc' } } },
+    });
     if (!conversation || conversation.sessionId !== sessionId) {
       return null;
     }
