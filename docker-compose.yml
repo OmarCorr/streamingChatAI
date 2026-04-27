@@ -115,6 +115,7 @@ services:
     container_name: langfuse-web
     profiles: [observability]
     restart: unless-stopped
+    networks: [default, web]
     depends_on:
       langfuse-worker: { condition: service_started }
     ports:
@@ -160,6 +161,7 @@ services:
     container_name: chat-backend
     profiles: [apps]
     restart: unless-stopped
+    networks: [default, web]
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
@@ -184,6 +186,7 @@ services:
     container_name: chat-frontend
     profiles: [apps]
     restart: unless-stopped
+    networks: [default, web]
     depends_on:
       backend: { condition: service_healthy }
     env_file: .env.prod
@@ -199,21 +202,10 @@ services:
       retries: 5
       start_period: 20s
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: chat-caddy
-    profiles: [apps]
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      backend: { condition: service_started }
-      frontend: { condition: service_started }
+networks:
+  web:
+    name: web
+    external: true
 
 volumes:
   postgres_data:
@@ -222,5 +214,3 @@ volumes:
   clickhouse_logs:
   redis_data:
   minio_data:
-  caddy_data:
-  caddy_config:
