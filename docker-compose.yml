@@ -8,8 +8,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-chatdemo}
       POSTGRES_USER: ${POSTGRES_USER:-chatuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -118,8 +116,6 @@ services:
     networks: [default, web]
     depends_on:
       langfuse-worker: { condition: service_started }
-    ports:
-      - "3100:3000"
     env_file:
       - path: .env.prod
         required: false
@@ -169,8 +165,6 @@ services:
     environment:
       # Override PORT from env_file so backend and frontend can share .env.prod without collision.
       PORT: "3001"
-    ports:
-      - "3001:3001"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -193,8 +187,6 @@ services:
     environment:
       # Override PORT from env_file (which is 3001 for the backend) so Next.js listens on 3000.
       PORT: "3000"
-    ports:
-      - "3000:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
