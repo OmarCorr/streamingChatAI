@@ -102,9 +102,9 @@ Every assistant message lands in Langfuse with:
 - Cost in USD, computed inline (`$0.30 / 1M input + $2.50 / 1M output` for Gemini 2.5 Flash)
 - Full trace with the rendered prompt, the message history, and the model response
 
-Self-hosted **Langfuse v3** runs in the same Docker Compose stack as the app — zero additional infrastructure cost, no vendor lock-in, no telemetry leaking to a third party. Implemented in [`langfuse.service.ts`](apps/backend/src/modules/observability/langfuse.service.ts).
+**Langfuse Cloud** is the default observability backend in production — its free tier comfortably covers the demo's volume. The repository **also ships a full Langfuse v3 self-hosted stack** (Postgres + ClickHouse + Redis + MinIO + worker + web) in `docker-compose.yml` under the `observability` profile, for clients with data-residency or compliance constraints that need everything to stay on their own VPS. Switching between modes is one env var: `LANGFUSE_HOST`. Implemented in [`langfuse.service.ts`](apps/backend/src/modules/observability/langfuse.service.ts).
 
-The Langfuse calls are wrapped in `try/catch` and the service is fully optional: **observability failures never affect user-facing requests**. If Langfuse is down, the chat still works.
+The Langfuse calls are wrapped in `try/catch` and the service is fully optional: **observability failures never affect user-facing requests**. If Langfuse is unreachable, the chat still works.
 
 ### 4 · Explicit state machine for streaming UX
 
@@ -158,12 +158,13 @@ No flicker between states. No "is it loading or did it fail" ambiguity. No layou
                 ┌───────────────────────┼────────────────────────┐
                 ▼                       ▼                        ▼
         ┌─────────────┐         ┌─────────────┐          ┌──────────────┐
-        │ PostgreSQL  │         │  Gemini 2.5 │          │ Langfuse v3  │
-        │ 16 (Prisma) │         │  Flash API  │          │ self-hosted  │
+        │ PostgreSQL  │         │  Gemini 2.5 │          │  Langfuse    │
+        │ 16 (Prisma) │         │  Flash API  │          │ Cloud · or   │
+        │             │         │             │          │ self-host opt│
         └─────────────┘         └─────────────┘          └──────────────┘
 ```
 
-Single Contabo VPS. Docker Compose orchestrates Postgres + backend + frontend + the full Langfuse v3 stack (Postgres, ClickHouse, Redis, MinIO, worker, web). A shared Caddy reverse-proxy fronts multiple projects on the same host with automatic TLS.
+Single Contabo VPS. Docker Compose orchestrates Postgres + backend + frontend by default; a separate `observability` profile is shipped to bring up the full Langfuse v3 self-hosted stack (Postgres, ClickHouse, Redis, MinIO, worker, web) for clients that need it. A shared Caddy reverse-proxy fronts multiple projects on the same host with automatic TLS.
 
 ### Tech list, with the why
 
@@ -177,7 +178,7 @@ Single Contabo VPS. Docker Compose orchestrates Postgres + backend + frontend + 
 | **Database** | PostgreSQL 16 + Prisma 5 | Boring, correct, type-safe. Indexed by `(sessionId, updatedAt)` and `(conversationId, createdAt)` |
 | **Frontend state** | Zustand | Tiny. No provider hell. Externally readable from non-React code (the SSE parser writes into the store from outside the React tree) |
 | **Markdown render** | react-markdown + remark-gfm + shiki | Streaming-safe (re-renders only changed nodes); shiki gives high-quality syntax highlighting without runtime cost |
-| **Observability** | Langfuse v3 (self-hosted) | LLM-native: token counts, cost, evals, prompt versioning. Sentry doesn't understand tokens. Datadog scales the bill, not the value |
+| **Observability** | Langfuse (Cloud by default · self-host shipped as a Compose profile) | LLM-native: token counts, cost, evals, prompt versioning. Sentry doesn't understand tokens. Datadog scales the bill, not the value. Self-hosting is one `--profile observability` away for compliance-sensitive deploys |
 | **Reverse proxy** | Caddy | Automatic Let's Encrypt, sane HTTP/2 + SSE buffering defaults, JSON config, one binary. No nginx config archaeology |
 | **CI/CD** | GitHub Actions → GHCR → Docker Compose on VPS | Push to `main`, ~4–5 min pipeline, healthcheck-gated deploy |
 | **TypeScript** | 5.x strict, zero `any` | Enforced by ESLint rule. Trades typing speed for refactor safety |
@@ -370,9 +371,9 @@ Three endpoints don't need DI. But this repo is a **sales artifact**, not a tuto
 
 A server crash mid-generation must not lose the user's partial response. Thinking in **failure modes from day one** is what separates senior engineers from juniors. The pattern costs roughly ten lines of buffering and is invisible in the happy path. The cost of getting it wrong is a worse-than-no-streaming experience on every restart.
 
-### Why Langfuse self-hosted and not Sentry/Datadog?
+### Why Langfuse and not Sentry/Datadog?
 
-Sentry tracks exceptions; it has no concept of tokens or cost. Datadog tracks everything; the bill scales with everything. **Langfuse is LLM-native**: per-call traces, token counts, cost rollups, eval support, prompt versioning, dataset replays. Self-hosted on the same VPS = $0 marginal cost and zero vendor lock-in.
+Sentry tracks exceptions; it has no concept of tokens or cost. Datadog tracks everything; the bill scales with everything. **Langfuse is LLM-native**: per-call traces, token counts, cost rollups, eval support, prompt versioning, dataset replays. The demo runs on **Langfuse Cloud** (free tier covers the volume) but the repo also ships a full self-hosted stack as a Docker Compose profile — clients pick the mode based on data-residency requirements without changing application code.
 
 ### Why SSE and not WebSockets?
 
